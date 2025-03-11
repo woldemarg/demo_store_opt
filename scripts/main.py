@@ -273,8 +273,62 @@ def optimize_data(blocks, required_area):
     selected_blocks = [b for b in is_block_selected if pulp.value(
         is_block_selected[b]) == 1]
 
+    results = {
+        'status': pulp.LpStatus[prob.status],
+        'assigned_blocks': [],
+        'category_summary': {},
+        'total_margin': 0,
+        'total_area': 0,
+        'total_required_area': sum(required_area.values()),
+        'total_positive_delta': 0,
+        'total_negative_delta': 0
+    }
+
+    # Process assigned blocks
+    for b in is_block_selected:
+        if pulp.value(is_block_selected[b]) == 1:
+            block_data = blocks[blocks['block_id'] == b].iloc[0].to_dict()
+            block_data['margin'] = block_data['area'] * \
+                block_data['marginality']
+            results['assigned_blocks'].append(block_data)
+            results['total_margin'] += block_data['margin']
+            results['total_area'] += block_data['area']
+
+    # Summarize by category
+    for cat in required_area:
+        if required_area[cat] > 0:
+            cat_blocks = [b for b in results['assigned_blocks']
+                          if b['category'] == cat]
+            assigned_area = sum(b['area'] for b in cat_blocks)
+            delta = assigned_area - required_area[cat]
+
+            # Track total positive and negative deltas
+            if delta > 0:
+                results['total_positive_delta'] += delta
+            else:
+                results['total_negative_delta'] += abs(delta)
+
+            results['category_summary'][cat] = {
+                'required': required_area[cat],
+                'assigned': assigned_area,
+                'delta': delta,
+                'delta_percentage': (delta / required_area[cat] * 100) if required_area[cat] > 0 else 0,
+                'blocks': len(cat_blocks),
+                'priority_breakdown': {}
+            }
+
+            # Add priority breakdown
+            for pri in sorted(blocks[blocks['category'] == cat]['priority'].unique()):
+                pri_blocks = [b for b in cat_blocks if b['priority'] == pri]
+                if pri_blocks:
+                    results['category_summary'][cat]['priority_breakdown'][pri] = {
+                        'blocks': len(pri_blocks),
+                        'area': sum(b['area'] for b in pri_blocks),
+                        'margin': sum(b['area'] * b['marginality'] for b in pri_blocks)
+                    }
+
     # Format the optimized results for display
-    return format_optimized_results(blocks, selected_blocks)
+    return format_optimized_results(blocks, selected_blocks), results
 
 
 def compare_store_layouts(initial_df, optimized_df):
@@ -464,6 +518,8 @@ if st.button("Згенерувати і оптимізувати магазин"
                          .groupby('category')[['area', 'margin']]
                          .sum())
 
+        init_margin = required_area['margin'].sum()
+
         required_area = required_area['area'].to_dict()
 
         st.session_state.required_area = required_area
@@ -475,13 +531,25 @@ if st.button("Згенерувати і оптимізувати магазин"
             ''')
             st.json(st.session_state.required_area)
 
-        optimized_result = optimize_data(blocks, required_area)
+        optimized_result, results = optimize_data(blocks, required_area)
         # Compare initial and optimized data
         comparison_result = compare_store_layouts(
             required, optimized_result)
 
+        summary = {
+            'Total Required Area': f"{results['total_required_area']:.2f}",
+            'Total Assigned Area': f"{results['total_area']:.2f}",
+            'Total Area Delta': f"{results['total_area'] - results['total_required_area']:.2f} "
+            f"({(results['total_area'] - results['total_required_area']) / results['total_required_area'] * 100:.2f}%)",
+            'Total Positive Delta (Over-allocation)': f"{results['total_positive_delta']:.2f}",
+            'Total Negative Delta (Under-allocation)': f"{results['total_negative_delta']:.2f}",
+            'Total Init Margin': f'{init_margin:.2f}',
+            'Total Opti Margin': f"{results['total_margin']:.2f}", }
+
         with container_dict:
-            st.markdown("### 5.2. Результати оптимізаці")
+            st.markdown('##№ 5.2. Загальні результати')
+            st.json(summary)
+            st.markdown("### 5.3. Деталі оптимізації")
             st.dataframe(comparison_result)
 
     else:
