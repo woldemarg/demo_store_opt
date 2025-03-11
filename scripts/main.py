@@ -529,7 +529,7 @@ if st.button("Згенерувати і оптимізувати магазин"
             ## 5. Механізм оптимізації
             ### 5.1. Вхідні площі для покриття
             ''')
-            st.json(st.session_state.required_area)
+            st.dataframe(st.session_state.required_area)
 
         optimized_result, results = optimize_data(blocks, required_area)
         # Compare initial and optimized data
@@ -548,7 +548,7 @@ if st.button("Згенерувати і оптимізувати магазин"
 
         with container_dict:
             st.markdown('### 5.2. Загальні результати')
-            st.json(summary)
+            st.dataframe(summary)
             st.markdown("### 5.3. Деталі оптимізації")
             st.dataframe(comparison_result)
 
