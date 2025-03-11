@@ -383,12 +383,12 @@ def compare_store_layouts(initial_df, optimized_df):
     # Add totals row with percentage changes
     row = pd.DataFrame({
         'category': 'TOTAL',
-        'initial_blocks': '',
-        'initial_area': initial_area_total,
-        'initial_margin': initial_margin_total,
-        'optimized_blocks': '',
-        'optimized_area': optimized_area_total,
-        'optimized_margin': optimized_margin_total,
+        'ini_blocks': '',
+        'ini_area': initial_area_total,
+        'ini_margin': initial_margin_total,
+        'opt_blocks': '',
+        'opt_area': optimized_area_total,
+        'opt_margin': optimized_margin_total,
         'area_diff': f"{area_total_diff:+.1f} ({area_pct_change:+.1f}%)",
         'margin_diff': f"{margin_total_diff:+.1f} ({margin_pct_change:+.1f}%)"
     },
