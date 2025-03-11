@@ -547,7 +547,7 @@ if st.button("Згенерувати і оптимізувати магазин"
             'Total Opti Margin': f"{results['total_margin']:.2f}", }
 
         with container_dict:
-            st.markdown('##№ 5.2. Загальні результати')
+            st.markdown('### 5.2. Загальні результати')
             st.json(summary)
             st.markdown("### 5.3. Деталі оптимізації")
             st.dataframe(comparison_result)
