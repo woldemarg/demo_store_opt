@@ -350,12 +350,12 @@ def compare_store_layouts(initial_df, optimized_df):
 
         comparison_data.append({
             'category': category,
-            'initial_blocks': init_data['blocks'],
-            'initial_area': init_data['area'],
-            'initial_margin': init_data['margin'],
-            'optimized_blocks': opt_data['blocks'],
-            'optimized_area': opt_data['area'],
-            'optimized_margin': opt_data['margin'],
+            'ini_blocks': init_data['blocks'],
+            'ini_area': init_data['area'],
+            'ini_margin': init_data['margin'],
+            'opt_blocks': opt_data['blocks'],
+            'opt_area': opt_data['area'],
+            'opt_margin': opt_data['margin'],
             'area_diff': area_diff,
             'margin_diff': margin_diff
         })
