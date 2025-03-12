@@ -8,9 +8,9 @@ import numpy as np
 
 def generate_synthetic_data():
 
-    num_categories = np.random.randint(10, 16)
-    categories = [f"Category_{i:02d}" for i in range(1, num_categories + 1)]
-    data = []
+    num_categories = np.random.randint(15, 21)
+    categories = [f'Category_{i:02d}' for i in range(1, num_categories + 1)]
+    dat = []
 
     for category in categories:
         num_priorities = np.random.randint(1, 3)
@@ -28,27 +28,27 @@ def generate_synthetic_data():
 
                     noise = np.random.normal(0, 0.03)
 
-                    # marginality = round(np.exp(-area / 7), 2) + noise
+                    # marginality = round(np.exp(-area / 10), 2) + noise
                     marginality = round(
-                        1 / (1 + np.exp(-area / 7)), 2) + noise
+                        1 / (1 + np.exp(-area / 10)), 2) + noise
 
                     # Ensure the marginality stays within [0, 1] after adding noise
                     marginality = np.clip(marginality, 0, 1)
 
-                    data.append(
+                    dat.append(
                         [category, priority, series, area, marginality])
 
     df = pd.DataFrame(
-        data, columns=["category", "priority", "series", "area", "marginality"])
+        dat, columns=['category', 'priority', 'series', 'area', 'marginality'])
 
     # Sorting: category (asc), priority (asc), series (asc), area (desc)
-    df.sort_values(by=["category", "priority", "series", "area"], inplace=True)
+    df.sort_values(by=['category', 'priority', 'series', 'area'], inplace=True)
 
-    # Assign block labels: "Category_01_B01"
-    df.insert(1, 'block_id', df.groupby("category").cumcount() + 1)
+    # Assign block labels: 'Category_01_B01'
+    df.insert(1, 'cluster_id', df.groupby('category').cumcount() + 1)
 
-    df["block_id"] = df.apply(
-        lambda row: f"{row['category']}_B{row['block_id']:02d}", axis=1)
+    df['cluster_id'] = df.apply(
+        lambda row: f"{row['category']}_B{row['cluster_id']:02d}", axis=1)
 
     return df.reset_index(drop=True)
 
@@ -76,7 +76,7 @@ def select_blocks(blocks):
 
 def format_optimized_results(blocks, selected_block_ids):
 
-    optimized_blocks = blocks[blocks['block_id'].isin(
+    optimized_blocks = blocks[blocks['cluster_id'].isin(
         selected_block_ids)].copy()
 
     optimized_blocks['margin'] = optimized_blocks['area'] * \
@@ -88,31 +88,31 @@ def format_optimized_results(blocks, selected_block_ids):
 def optimize_data(blocks, required_area):
 
     # Create the optimization problem
-    prob = pulp.LpProblem("Maximize_Store_Margin", pulp.LpMaximize)
+    prob = pulp.LpProblem('Maximize_Store_Margin', pulp.LpMaximize)
 
     # Create decision variables with more descriptive names
     is_block_selected = {
-        b: pulp.LpVariable(f"select_block_{b}", cat="Binary")
-        for b in blocks['block_id']
+        b: pulp.LpVariable(f'select_block_{b}', cat='Binary')
+        for b in blocks['cluster_id']
     }
 
     is_category_used = {
-        cat: pulp.LpVariable(f"use_category_{cat}", cat="Binary")
+        cat: pulp.LpVariable(f'use_category_{cat}', cat='Binary')
         for cat in required_area
     }
 
     # Area deviation tracking variables
     area_deviation = {
         cat: (
-            pulp.LpVariable(f"excess_area_{cat}", lowBound=0),
-            pulp.LpVariable(f"deficit_area_{cat}", lowBound=0)
+            pulp.LpVariable(f'excess_area_{cat}', lowBound=0),
+            pulp.LpVariable(f'deficit_area_{cat}', lowBound=0)
         )
         for cat in required_area
     }
 
     # Priority tracking variables
     is_priority_used = {
-        (cat, pri): pulp.LpVariable(f"use_priority_{cat}_{pri}", cat="Binary")
+        (cat, pri): pulp.LpVariable(f'use_priority_{cat}_{pri}', cat='Binary')
         for cat in required_area
         for pri in blocks[blocks['category'] == cat]['priority'].unique()
     }
@@ -127,7 +127,7 @@ def optimize_data(blocks, required_area):
     # 1. Margin maximization term
     margin_terms = [
         is_block_selected[b] *
-        blocks.loc[blocks['block_id'] == b, 'margin'].values[0]
+        blocks.loc[blocks['cluster_id'] == b, 'margin'].values[0]
         for b in is_block_selected
     ]
 
@@ -141,7 +141,7 @@ def optimize_data(blocks, required_area):
             pri_blocks = blocks[
                 (blocks['category'] == cat) &
                 (blocks['priority'] == pri)
-            ]['block_id'].tolist()
+            ]['cluster_id'].tolist()
 
             priority_penalty_terms.extend(
                 [penalty * is_block_selected[b] for b in pri_blocks])
@@ -165,12 +165,12 @@ def optimize_data(blocks, required_area):
 
     # Add constraints grouped by purpose
     # 1. Category area constraints
-    for cat, req_area in required_area.items():
-        cat_blocks = blocks[blocks['category'] == cat]['block_id'].tolist()
+    for cat, r_area in required_area.items():
+        cat_blocks = blocks[blocks['category'] == cat]['cluster_id'].tolist()
         excess_area, deficit_area = area_deviation[cat]
 
         # Skip categories with zero required area
-        if req_area == 0:
+        if r_area == 0:
             prob += pulp.lpSum(is_block_selected[b] for b in cat_blocks) == 0
             continue
 
@@ -184,10 +184,10 @@ def optimize_data(blocks, required_area):
         # Area deviation constraint
         total_area = pulp.lpSum(
             is_block_selected[b] *
-            blocks.loc[blocks['block_id'] == b, 'area'].values[0]
+            blocks.loc[blocks['cluster_id'] == b, 'area'].values[0]
             for b in cat_blocks
         )
-        prob += total_area - req_area == excess_area - deficit_area
+        prob += total_area - r_area == excess_area - deficit_area
 
     # 2. Priority hierarchy constraints
     for cat in required_area:
@@ -195,7 +195,7 @@ def optimize_data(blocks, required_area):
             pri_blocks = blocks[
                 (blocks['category'] == cat) &
                 (blocks['priority'] == pri)
-            ]['block_id'].tolist()
+            ]['cluster_id'].tolist()
 
             # Link priority usage variable to block selection
             prob += pulp.lpSum([is_block_selected[b] for b in pri_blocks]
@@ -207,26 +207,6 @@ def optimize_data(blocks, required_area):
             if pri > 1 and (pri - 1) in blocks[blocks['category'] == cat]['priority'].unique():
                 prob += is_priority_used[(cat, pri)
                                          ] <= is_priority_used[(cat, pri - 1)]
-
-    # 3. Series incompatibility constraints
-    # for cat in required_area:
-    #     for priority in blocks[blocks['category'] == cat]['priority'].unique():
-    #         # Group blocks by series
-    #         series_groups = blocks[
-    #             (blocks['category'] == cat) &
-    #             (blocks['priority'] == priority)
-    #         ].groupby('series')
-
-    #         for series, group in series_groups:
-    #             incompatible_blocks = group['block_id'].tolist()
-
-    #             if len(incompatible_blocks) > 1:
-    #                 # At most one block from the same series can be selected
-    #                 prob += pulp.lpSum(is_block_selected[b]
-    #                                    for b in incompatible_blocks) <= 1
-
-    # Remove the old series incompatibility constraints (section 3)
-    # Replace with new series selection constraints
 
     # 3. Series selection constraints
     for cat in required_area:
@@ -241,14 +221,14 @@ def optimize_data(blocks, required_area):
             is_series_used = {}
             for series in series_in_priority:
                 is_series_used[series] = pulp.LpVariable(
-                    f"use_series_{cat}_{priority}_{series}", cat="Binary")
+                    f'use_series_{cat}_{priority}_{series}', cat='Binary')
 
                 # Get all blocks in this series
                 series_blocks = blocks[
                     (blocks['category'] == cat) &
                     (blocks['priority'] == priority) &
                     (blocks['series'] == series)
-                ]['block_id'].tolist()
+                ]['cluster_id'].tolist()
 
                 # Link series usage variable to block selection
                 # If any block from the series is selected, the series is used
@@ -287,7 +267,7 @@ def optimize_data(blocks, required_area):
     # Process assigned blocks
     for b in is_block_selected:
         if pulp.value(is_block_selected[b]) == 1:
-            block_data = blocks[blocks['block_id'] == b].iloc[0].to_dict()
+            block_data = blocks[blocks['cluster_id'] == b].iloc[0].to_dict()
             block_data['margin'] = block_data['area'] * \
                 block_data['marginality']
             results['assigned_blocks'].append(block_data)
@@ -332,7 +312,7 @@ def optimize_data(blocks, required_area):
 
 
 def compare_store_layouts(initial_df, optimized_df):
-    """
+    '''
     Create a side-by-side comparison of initial and optimized store layouts.
 
     Args:
@@ -341,7 +321,7 @@ def compare_store_layouts(initial_df, optimized_df):
 
     Returns:
         DataFrame: Merged comparison showing both layouts by category with detailed block info
-    """
+    '''
     # Process initial blocks with per-block details
     initial_blocks_detail = {}
     initial_area_total = 0
@@ -353,7 +333,7 @@ def compare_store_layouts(initial_df, optimized_df):
 
         for _, row in cat_blocks.iterrows():
             block_details.append(
-                f"{row['block_id']} (A:{row['area']:.1f}, M:{row['margin']:.1f})"
+                f"{row['cluster_id']} (A:{row['area']:.1f}, M:{row['margin']:.1f})"
             )
             initial_area_total += row['area']
             initial_margin_total += row['margin']
@@ -375,7 +355,7 @@ def compare_store_layouts(initial_df, optimized_df):
 
         for _, row in cat_blocks.iterrows():
             block_details.append(
-                f"{row['block_id']} (A:{row['area']:.1f}, M:{row['margin']:.1f})"
+                f"{row['cluster_id']} (A:{row['area']:.1f}, M:{row['margin']:.1f})"
             )
             optimized_area_total += row['area']
             optimized_margin_total += row['margin']
@@ -443,8 +423,8 @@ def compare_store_layouts(initial_df, optimized_df):
         'opt_blocks': '',
         'opt_area': optimized_area_total,
         'opt_margin': optimized_margin_total,
-        'area_diff': f"{area_total_diff:+.1f} ({area_pct_change:+.1f}%)",
-        'margin_diff': f"{margin_total_diff:+.1f} ({margin_pct_change:+.1f}%)"
+        'area_diff': f'{area_total_diff:+.1f} ({area_pct_change:+.1f}%)',
+        'margin_diff': f'{margin_total_diff:+.1f} ({margin_pct_change:+.1f}%)'
     },
         index=[0])
 
@@ -453,104 +433,150 @@ def compare_store_layouts(initial_df, optimized_df):
 
     return comparison_df.round(1)
 
+
 # %%
 
-
-st.title("Cистема оптимізації: опис")
-
-st.markdown("""
-## 1. Загальна мета
-Максимізувати дохід магазину, оптимально розподіляючи доступні блоки (кластери) між товарними категоріями.
-## 2. Правила оптимізації
-### 2.1. Вимоги покриття площі
-Кожна категорія має визначену площу, яку необхідно покрити кластерами (вхідні обмеження / параметри магазину). Виділена площа (фактична площа кластерів) повинна якомога точніше відповідати цій потребі, допускаючи незначні відхилення. Загальна площа всіх призначених кластерів під категоріями має бути максимально наближеною до сумарної необхідної площі.
-### 2.2. Пріоритети і серії кластерів
-Кластери мають пріоритети — перевага надається тим, що мають вищий рівень (задається у вхідному довіднику / параметрах кластерів). Усередині пріоритету одного рівня кластери групуються в лінійки (серії). В межах кожного пріоритету (під відповідну категорію) повинні бути представлені кластери з усіх серій, дотримуючись правила: одна серія — тільки один блок.
-## 3. Генерація довідника кластерів
-### 3.1. Загальні правила генерації довідника:
-- довідник генерується для 10-15 товарних категорій
-- маржинальність блоків (дохід на кв. м) задається нелінійною зростаючою функцією, тобто більша площа може приносити пропорційно вищий дохід
-- кількість пріоритетів всередині категорії і кількість лінійок (серій) визначається випадково, кількість блоків в серії 5-7 шт.
-""")
+st.markdown('''
+    # Система оптимізації: опис
+    ## 1. Загальна мета
+    Оптимально розподілити доступні кластери між товарними категоріями, щоб максимально збільшити дохід магазину.
+    ## 2. Правила оптимізації
+    ### 2.1. Покриття площі
+    - Кожна категорія має задану необхідну площу (вхідні параметри магазину).
+    - Виділена площа (сумарна площа призначених кластерів) повинна максимально відповідати цій потребі з допустимими незначними відхиленнями.
+    - Сукупна площа всіх кластерів під категоріями має бути якнайближчою до загальної необхідної площі.
+    ### 2.2. Пріоритетність і серійність кластерів
+    - Кластери мають пріоритети: перевага надається тим, що мають вищий рівень (визначається у вхідному довіднику).
+    - У межах пріоритету одного рівня кластери об’єднуються в серії.
+    - Для кожної категорії слід включити кластери з усіх доступних серій відповідного пріоритету, дотримуючись правила: **з однієї серії можна використовувати лише один кластер**.
+    ## 3. Генерація довідника кластерів
+    ### 3.1. Основні принципи генерації
+    - Довідник створюється для 15-20 товарних категорій.
+    - Дохідність блоків (маржинальність на 1 м²) визначається нелінійною зростаючою функцією: більша площа може приносити пропорційно вищий дохід.
+    - Кількість рівнів пріоритету та серій кластерів визначається випадково.
+    - У кожній серії міститься від 5 до 7 кластерів.
+    - В цілому, **параметри генерації наближені до реальних параметрів мережі**.
+''')
 
 container = st.container()
 # Generate and display synthetic data button
-if st.button("Згенерувати довідник"):
-    blocks = generate_synthetic_data()
-    st.session_state.blocks = blocks.copy()
+if st.button('Згенерувати довідник кластерів', type='primary'):
+    data = generate_synthetic_data()
+    st.session_state.blocks = data.copy()
 
     with container:
-        st.markdown("### 3.2. Характеристики / параметри кластерів")
-        st.dataframe(blocks)
+        st.markdown('''
+            ### 3.2. Характеристики кластерів
+            - Кожен кластер має свій унікальний набір параметрів, включаючи площу, дохідність та пріоритет.
+        ''')
+        st.dataframe(data)
 
-st.markdown("""
-##  4. Генерація магазину
-### 4.1. Загальні правила генерації магазину:
-- для кожної категорії із довідника обираються лінійки (серії) блоків із найвищим пріоритетом, із кожної такої серії випадково обирається один блок
-- деяким категоріям (випадково) можуть додаватися блоки із меншим пріоритетом
-""")
+st.markdown('''
+    ##  4. Генерація магазину
+    ### 4.1. Формування асортименту
+    - Для кожної категорії, представленої в довіднику, обираються по одному кластеру в кожній серії найвищого пріоритету.
+    - Деяким категоріям може бути додано кластери нижчого пріоритету (випадковим чином).
+    - Таким чином, задача оптимізації - **покращити випадково сформоване покриття площі магазину кластерами**.
+''')
+
 container_store = st.container()
 container_dict = st.container()
 container_opt = st.container()
+
 # Button to run optimization
-if st.button("Згенерувати і оптимізувати магазин"):
-
-    required = (select_blocks(st.session_state.blocks)
-                .assign(margin=lambda x: x['area'] * x['marginality'])
-                .sort_values(['category', 'priority', 'series'])
-                .reset_index(drop=True))
-
-    st.session_state.required = required
+if st.button('Згенерувати і оптимізувати магазин', type='primary'):
 
     if 'blocks' in st.session_state:
-        blocks = st.session_state.blocks.copy()
-        required = st.session_state.required.copy()
 
-        with container:
-            st.markdown("### 3.2. Характеристики / параметри кластерів")
-            st.dataframe(st.session_state.blocks)
+        required = (select_blocks(st.session_state.blocks)
+                    .assign(margin=lambda x: x['area'] * x['marginality'])
+                    .sort_values(['category', 'priority', 'series'])
+                    .reset_index(drop=True))
 
-        with container_store:
-            st.markdown("### 4.2. Кластери у магазині")
-            st.dataframe(st.session_state.required)
+        st.session_state.required = required
 
-        required_area = (required
-                         .groupby('category')[['area', 'margin']]
-                         .sum())
+        if 'blocks' in st.session_state:
+            data = st.session_state.blocks.copy()
+            required = st.session_state.required.copy()
 
-        init_margin = required_area['margin'].sum()
+            with container:
+                st.markdown('''
+                    ### 3.2. Характеристики кластерів
+                    - Кожен кластер має свій унікальний набір параметрів, включаючи площу, дохідність та пріоритет.
+                ''')
+                st.dataframe(st.session_state.blocks)
 
-        required_area = required_area['area'].to_dict()
+            with container_store:
+                st.markdown('''
+                    ### 4.2. Кластери у магазині
+                    - Набір кластерів сформовано випадковим чином на основі довідника.
+                ''')
+                st.dataframe(st.session_state.required)
 
-        st.session_state.required_area = required_area
+            req_area = (required
+                        .groupby('category')[['area', 'margin']]
+                        .sum())
 
-        with container_dict:
-            st.markdown('''
-            ## 5. Механізм оптимізації
-            ### 5.1. Вхідні площі для покриття
-            ''')
-            st.dataframe(st.session_state.required_area)
+            init_margin = req_area['margin'].sum()
 
-        optimized_result, results = optimize_data(blocks, required_area)
-        # Compare initial and optimized data
-        comparison_result = compare_store_layouts(
-            required, optimized_result)
+            req_area = req_area['area'].to_dict()
 
-        summary = {
-            'Total Required Area': f"{results['total_required_area']:.2f}",
-            'Total Assigned Area': f"{results['total_area']:.2f}",
-            'Total Area Delta': f"{results['total_area'] - results['total_required_area']:.2f} "
-            f"({(results['total_area'] - results['total_required_area']) / results['total_required_area'] * 100:.2f}%)",
-            'Total Positive Delta (Over-allocation)': f"{results['total_positive_delta']:.2f}",
-            'Total Negative Delta (Under-allocation)': f"{results['total_negative_delta']:.2f}",
-            'Total Init Margin': f'{init_margin:.2f}',
-            'Total Opti Margin': f"{results['total_margin']:.2f}", }
+            # st.session_state.required_area = req_area
 
-        with container_dict:
-            st.markdown('### 5.2. Загальні результати')
-            st.dataframe(summary)
-            st.markdown("### 5.3. Деталі оптимізації")
-            st.dataframe(comparison_result)
+            with container_dict:
+                st.markdown('''
+                   ## 5. Механізм оптимізації
+                   ### 5.1. Вхідні параметри
+                   - Задані площі категорій, які необхідно покрити.
+                ''')
+                # st.dataframe(st.session_state.required_area)
+                st.dataframe(req_area)
+
+            optimized_result, res = optimize_data(data, req_area)
+
+            comparison_result = compare_store_layouts(
+                required, optimized_result)
+
+            summary = {
+                'Загальна необхідна площа':
+                    f"{res['total_required_area']:.1f}",
+
+                'Загальна виділена площа':
+                    f"{res['total_area']:.1f}",
+
+                'Загальне відхилення площі':
+                    f"{res['total_area'] - res['total_required_area']:.1f} ({(res['total_area'] - res['total_required_area']) / res['total_required_area'] * 100:.1f}%)",
+
+                'Загальне перевищення площі':
+                    f"{res['total_positive_delta']:.1f}",
+
+                'Загальний дефіцит площі':
+                    f"{res['total_negative_delta']:.1f}",
+
+                'Початковий загальний дохід':
+                    f'{init_margin:.1f}',
+
+                'Оптимізований загальний дохід':
+                    f"{res['total_margin']:.1f}",
+
+                'Приріст загального доходу':
+                    f"{res['total_margin'] - init_margin:.1f} ({(res['total_margin'] - init_margin) / init_margin * 100:.1f}%)"
+            }
+
+            with container_dict:
+                st.markdown('''
+                    ### 5.2. Підсумковий результат
+                    - Алгоритм підбирає найбільш відповідні кластери згідно з заданими правилами та обмеженнями.
+                ''')
+                st.dataframe(summary)
+                st.markdown('''
+                    ### 5.3. Деталі оптимізації
+                    - Оптимізований розподіл кластерів між категоріями для максимізації доходу.
+                            ''')
+                st.dataframe(comparison_result)
+                st.markdown('''
+                    > A - area (площа); M - margin (доход)
+                ''')
 
     else:
-        st.error("Спочатку треба згенерувати довідник блоків")
+        st.error('Спочатку треба згенерувати довідник кластерів')
